@@ -1,5 +1,3 @@
-const fetch = require("node-fetch");
-
 exports.handler = async (event) => {
 	if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
 
@@ -21,7 +19,10 @@ exports.handler = async (event) => {
 		const getRes = await fetch(`${apiBase}?ref=${branch}`, {
 			headers: { Authorization: `token ${token}`, "User-Agent": "netlify-function" },
 		});
-		if (!getRes.ok) return { statusCode: getRes.status, body: `Failed to fetch categories.json: ${await getRes.text()}` };
+		if (!getRes.ok) {
+			const text = await getRes.text();
+			return { statusCode: getRes.status, body: `Failed to fetch categories.json: ${text}` };
+		}
 		const getJson = await getRes.json();
 		const currentSha = getJson.sha;
 		const contentBase64 = getJson.content;
@@ -52,7 +53,10 @@ exports.handler = async (event) => {
 			}),
 		});
 
-		if (!putRes.ok) return { statusCode: putRes.status, body: `Failed to update categories.json: ${await putRes.text()}` };
+		if (!putRes.ok) {
+			const text = await putRes.text();
+			return { statusCode: putRes.status, body: `Failed to update categories.json: ${text}` };
+		}
 		const putJson = await putRes.json();
 		return { statusCode: 200, body: JSON.stringify({ ok: true, result: putJson }) };
 	} catch (err) {
