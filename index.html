@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<title>Screenshot Gallery</title>
+		<style>
+			:root {
+				--gap: 12px;
+			}
+			body {
+				font-family: system-ui, Segoe UI, Roboto, Arial;
+				background: #f7fafc;
+				margin: 20px;
+				color: #111;
+			}
+			.wrap {
+				max-width: 1100px;
+				margin: 0 auto;
+			}
+			header {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				margin-bottom: 16px;
+			}
+			input[type="search"] {
+				padding: 8px;
+				border-radius: 8px;
+				border: 1px solid #d1d7df;
+				width: 320px;
+			}
+			.grid {
+				display: grid;
+				gap: var(--gap);
+			}
+			.cards-grid {
+				grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+			}
+			.images-grid {
+				grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+			}
+			.card,
+			.cat-card {
+				background: #fff;
+				border-radius: 10px;
+				overflow: hidden;
+				box-shadow: 0 6px 18px rgba(10, 20, 40, 0.06);
+				cursor: pointer;
+			}
+			.thumb {
+				width: 100%;
+				height: 150px;
+				object-fit: cover;
+				display: block;
+				background: #ddd;
+			}
+			.meta {
+				padding: 10px;
+				font-size: 13px;
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			}
+			.tag {
+				background: #eef2ff;
+				padding: 4px 8px;
+				border-radius: 999px;
+				font-size: 12px;
+			}
+			.empty {
+				padding: 28px;
+				background: #fff;
+				border-radius: 12px;
+				text-align: center;
+				color: #666;
+				border: 1px dashed #e6eefc;
+			}
+			.cat-card {
+				display: flex;
+				flex-direction: column;
+			}
+			.cat-card .thumb {
+				height: 140px;
+			}
+			.breadcrumbs {
+				font-size: 13px;
+				color: #444;
+				margin-bottom: 10px;
+			}
+			.back-btn {
+				padding: 6px 10px;
+				border-radius: 8px;
+				border: 1px solid #d1d7df;
+				background: #fff;
+				cursor: pointer;
+				margin-right: 8px;
+			}
+			.controls {
+				display: flex;
+				gap: 8px;
+				align-items: center;
+			}
+			.lightbox {
+				position: fixed;
+				inset: 0;
+				background: rgba(0, 0, 0, 0.85);
+				display: none;
+				align-items: center;
+				justify-content: center;
+				padding: 20px;
+				z-index: 100;
+			}
+			.lightbox.open {
+				display: flex;
+			}
+			.lb-inner {
+				max-width: 1200px;
+				width: 100%;
+				background: #fff;
+				border-radius: 10px;
+				overflow: hidden;
+			}
+			.lb-img {
+				width: 100%;
+				height: 70vh;
+				object-fit: contain;
+				background: #000;
+			}
+			.lb-actions {
+				display: flex;
+				gap: 8px;
+				padding: 10px;
+				justify-content: flex-end;
+				background: #fff;
+			}
+			@media (max-width: 520px) {
+				.thumb {
+					height: 120px;
+				}
+				.lb-img {
+					height: 55vh;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="wrap">
+			<header>
+				<h1 style="margin: 0">Screenshot Gallery</h1>
+				<div style="display: flex; gap: 12px; align-items: center">
+					<input id="search" type="search" placeholder="Search filenames..." />
+					<div class="controls">
+						<button id="homeBtn" class="back-btn">Home</button>
+						<button id="refresh" class="back-btn">Refresh</button>
+					</div>
+				</div>
+			</header>
+
+			<div id="content">
+				<div class="empty">Loading categories…</div>
+			</div>
+		</div>
+
+		<div id="lightbox" class="lightbox" role="dialog" aria-modal="true">
+			<div class="lb-inner">
+				<img id="lbImg" class="lb-img" alt="" />
+				<div class="lb-actions">
+					<a id="downloadBtn" class="back-btn" download>Download Full</a>
+					<button id="closeBtn" class="back-btn">Close</button>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			const cloudName = "dxce6n1uz";
+			const defaultTag = "screenshots";
+
+			const content = document.getElementById("content");
+			const searchInput = document.getElementById("search");
+			const homeBtn = document.getElementById("homeBtn");
+			const refreshBtn = document.getElementById("refresh");
+
+			const lightbox = document.getElementById("lightbox");
+			const lbImg = document.getElementById("lbImg");
+			const downloadBtn = document.getElementById("downloadBtn");
+			const closeBtn = document.getElementById("closeBtn");
+
+			let CURRENT_IMAGES = [];
+			let CURRENT_TAG = null;
+			let CATEGORIES = [];
+
+			function listUrlForTag(tag) {
+				return `https://res.cloudinary.com/${cloudName}/image/list/${encodeURIComponent(tag)}.json`;
+			}
+
+			async function loadCategories() {
+				content.innerHTML = '<div class="empty">Loading categories…</div>';
+				try {
+					const res = await fetch("./categories.json", { cache: "no-store" });
+					if (!res.ok) throw new Error("Could not load categories.json");
+					CATEGORIES = await res.json();
+					showHome();
+				} catch (err) {
+					content.innerHTML = `<div class="empty">Failed to load categories.json. Add categories.json to the repo.</div>`;
+					console.error(err);
+				}
+			}
+
+			async function showHome() {
+				document.title = "Screenshot Gallery";
+				searchInput.value = "";
+				content.innerHTML = '<div class="empty">Loading categories…</div>';
+
+				const cards = await Promise.all(
+					CATEGORIES.map(async (c) => {
+						try {
+							const res = await fetch(listUrlForTag(c.tag), { cache: "no-store" });
+							if (!res.ok) throw new Error("no");
+							const data = await res.json();
+							const first = (data.resources && data.resources[0]) || null;
+							const format = first ? first.format || "jpg" : "jpg";
+							const thumb = first ? `https://res.cloudinary.com/${cloudName}/image/upload/c_fill,w_600,h_350,f_auto,q_auto/${first.public_id}.${format}` : null;
+							return { ...c, thumb };
+						} catch (e) {
+							return { ...c, thumb: null };
+						}
+					})
+				);
+
+				const html = `
+        <div style="margin-bottom:14px"><strong>Featured categories</strong></div>
+        <div class="grid cards-grid">
+          ${cards
+						.map(
+							(cat) => `
+            <article class="cat-card card" data-tag="${cat.tag}">
+              <img class="thumb" src="${cat.thumb || "data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22140%22><rect fill=%22%23eee%22 width=%22200%22 height=%22140%22/></svg>"}" alt="${cat.name}">
+              <div class="meta"><div style="font-weight:600">${cat.name}</div><div class="tag">${cat.tag}</div></div>
+            </article>
+          `
+						)
+						.join("")}
+        </div>
+      `;
+				content.innerHTML = html;
+
+				document.querySelectorAll(".cat-card").forEach((el) => {
+					el.addEventListener("click", () => {
+						const t = el.dataset.tag;
+						showCategory(t);
+					});
+				});
+			}
+
+			async function showCategory(tag) {
+				CURRENT_TAG = tag;
+				document.title = `Category: ${tag.replace(/_/g, " ")}`;
+				content.innerHTML = '<div class="empty">Loading images…</div>';
+				try {
+					const res = await fetch(listUrlForTag(tag), { cache: "no-store" });
+					if (!res.ok) throw new Error("Could not fetch");
+					const data = await res.json();
+					const resources = data.resources || [];
+					if (resources.length === 0) {
+						content.innerHTML = `<div class="empty">No images found in this category.</div>`;
+						CURRENT_IMAGES = [];
+						return;
+					}
+
+					const images = resources.map((r) => {
+						const format = r.format || "jpg";
+						return {
+							public_id: r.public_id,
+							format,
+							thumb: `https://res.cloudinary.com/${cloudName}/image/upload/c_fill,w_800,h_500,f_auto,q_auto/${r.public_id}.${format}`,
+							full: `https://res.cloudinary.com/${cloudName}/image/upload/f_auto,q_auto/${r.public_id}.${format}`,
+							alt: r.original_filename || r.public_id,
+						};
+					});
+
+					CURRENT_IMAGES = images.slice();
+					renderImagesGrid(images, tag);
+				} catch (err) {
+					content.innerHTML = `<div class="empty">Failed to load. (${err.message})</div>`;
+				}
+			}
+
+			function renderImagesGrid(images, tagLabel) {
+				const html = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div class="breadcrumbs"><strong>${tagLabel.replace(/_/g, " ")}</strong></div>
+          <div><small>${images.length} images</small></div>
+        </div>
+        <div class="grid images-grid">
+          ${images
+						.map(
+							(it) => `
+            <article class="card" data-id="${encodeURIComponent(it.public_id)}">
+              <img loading="lazy" class="thumb" src="${it.thumb}" alt="${it.alt}">
+              <div class="meta">
+                <div style="max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.public_id}</div>
+                <div class="tag">${it.format}</div>
+              </div>
+            </article>
+          `
+						)
+						.join("")}
+        </div>
+      `;
+				content.innerHTML = html;
+
+				document.querySelectorAll(".card").forEach((card) => {
+					card.addEventListener("click", () => openLightbox(decodeURIComponent(card.dataset.id)));
+				});
+			}
+
+			function openLightbox(publicId) {
+				const img = CURRENT_IMAGES.find((i) => i.public_id === publicId);
+				if (!img) return;
+				lbImg.src = img.full;
+				downloadBtn.href = img.full;
+				downloadBtn.setAttribute("download", `${publicId}.${img.format}`);
+				lightbox.classList.add("open");
+			}
+			closeBtn.addEventListener("click", () => lightbox.classList.remove("open"));
+			lightbox.addEventListener("click", (e) => {
+				if (e.target === lightbox) lightbox.classList.remove("open");
+			});
+
+			searchInput.addEventListener("input", () => {
+				const q = searchInput.value.trim().toLowerCase();
+				if (!q) return;
+				const filtered = CURRENT_IMAGES.filter((i) => i.public_id.toLowerCase().includes(q) || (i.alt || "").toLowerCase().includes(q));
+				renderImagesGrid(filtered, `Search: ${q}`);
+			});
+
+			homeBtn.addEventListener("click", loadCategories);
+			refreshBtn.addEventListener("click", () => {
+				if (CURRENT_TAG) showCategory(CURRENT_TAG);
+				else loadCategories();
+			});
+
+			// initial
+			loadCategories();
+		</script>
+	</body>
+</html>

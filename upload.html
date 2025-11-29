@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<title>Admin Upload — Screenshot Gallery</title>
+		<style>
+			body {
+				font-family: system-ui, Segoe UI, Roboto, Arial;
+				padding: 28px;
+				background: #f3f6fb;
+			}
+			.card {
+				max-width: 760px;
+				margin: 0 auto;
+				background: #fff;
+				padding: 20px;
+				border-radius: 10px;
+				box-shadow: 0 8px 24px rgba(12, 20, 40, 0.06);
+			}
+			.row {
+				display: flex;
+				gap: 12px;
+				align-items: center;
+				margin-top: 10px;
+			}
+			label {
+				font-weight: 600;
+			}
+			input[type="text"] {
+				padding: 8px;
+				border-radius: 8px;
+				border: 1px solid #d1d7df;
+			}
+			.btn {
+				padding: 10px 14px;
+				border-radius: 8px;
+				border: 1px solid #d1d7df;
+				background: #fff;
+				cursor: pointer;
+			}
+			.log {
+				margin-top: 12px;
+				font-size: 13px;
+				color: #111;
+				word-break: break-all;
+				background: #fafbff;
+				padding: 10px;
+				border-radius: 8px;
+				border: 1px solid #eef2ff;
+			}
+			small {
+				color: #666;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="card">
+			<h2>Upload screenshots (admin)</h2>
+			<p>Type a category (character or anime) then upload. Category tags will be normalized (spaces → underscores).</p>
+
+			<div style="display: flex; gap: 12px; align-items: center">
+				<div>
+					<label for="category">Category</label>
+					<br />
+					<input id="category" type="text" placeholder="e.g. Princess Rosalina" />
+				</div>
+
+				<div style="margin-left: auto">
+					<button id="openWidget" class="btn">Open Upload Widget</button>
+					<button id="openCloud" class="btn">Open Media Library</button>
+				</div>
+			</div>
+
+			<div class="row">
+				<div style="flex: 1">
+					<small>
+						If left blank the image is tagged
+						<code>screenshots</code>
+						only.
+					</small>
+				</div>
+			</div>
+
+			<div class="log" id="log">No uploads yet.</div>
+		</div>
+
+		<script src="https://widget.cloudinary.com/v2.0/global/all.js"></script>
+		<script>
+			const cloudName = "dxce6n1uz";
+			const uploadPreset = "unsigned_screenshots";
+			const defaultTag = "screenshots";
+			const folderName = "screenshots";
+
+			const log = document.getElementById("log");
+			const categoryInput = document.getElementById("category");
+			const openBtn = document.getElementById("openWidget");
+
+			function normalizeTag(s) {
+				if (!s) return null;
+				return s.trim().replace(/\s+/g, "_");
+			}
+
+			openBtn.addEventListener("click", () => {
+				const raw = categoryInput.value || "";
+				const catTag = normalizeTag(raw);
+				const tags = catTag ? [defaultTag, catTag] : [defaultTag];
+
+				const widget = cloudinary.createUploadWidget(
+					{
+						cloudName,
+						uploadPreset,
+						sources: ["local", "url", "camera"],
+						multiple: false,
+						folder: folderName,
+						tags: tags,
+						clientAllowedFormats: ["png", "jpg", "jpeg", "webp"],
+						maxImageFileSize: 25000000,
+					},
+					async (err, info) => {
+						if (err) {
+							console.error(err);
+							log.textContent = "Upload error: " + (err.message || JSON.stringify(err));
+							return;
+						}
+						if (info && info.event === "success") {
+							const secureUrl = info.info.secure_url;
+							const publicId = info.info.public_id;
+							const format = info.info.format || secureUrl.split(".").pop().split("?")[0];
+							log.innerHTML = `✅ Uploaded: <a href="${secureUrl}" target="_blank" rel="noopener">${publicId}.${format}</a>
+            <div style="margin-top:8px;font-size:13px;color:#555;">Category tags: ${tags.join(", ")}</div>`;
+
+							if (catTag) {
+								try {
+									const res = await fetch("/.netlify/functions/add-category", {
+										method: "POST",
+										headers: { "Content-Type": "application/json" },
+										body: JSON.stringify({ name: raw.trim(), tag: catTag }),
+									});
+									const json = await res.json();
+									if (res.ok) {
+										log.innerHTML += `<div style="margin-top:6px;color:#2b7a2b">Category '${raw.trim()}' added/exists in categories.json.</div>`;
+									} else {
+										console.warn("Category update failed", json);
+										log.innerHTML += `<div style="margin-top:6px;color:#b03">Category update failed (see console)</div>`;
+									}
+								} catch (e) {
+									console.error("Category update request failed", e);
+									log.innerHTML += `<div style="margin-top:6px;color:#b03">Category update request failed</div>`;
+								}
+							}
+						}
+					}
+				);
+
+				widget.open();
+			});
+
+			document.getElementById("openCloud").addEventListener("click", () => {
+				window.open(`https://cloudinary.com/console/media_library/folders/${folderName}`, "_blank");
+			});
+		</script>
+	</body>
+</html>
